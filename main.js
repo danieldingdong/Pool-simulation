@@ -1,69 +1,163 @@
 class Ball {
-    constructor(id, color, x, y) {
-        this.id = id;
-        this.color = color;
+    constructor(x, y, radius, color, mass, isCue = false) {
         this.x = x;
         this.y = y;
-        this.velocityX = 0;
-        this.velocityY = 0;
-        this.createElement();
+        this.radius = radius;
+        this.color = color;
+        this.mass = mass;
+        this.velocity = { x: 0, y: 0 };
+        this.isCue = isCue;
     }
 
-    createElement() {
-        const ball = document.createElement("div");
-        ball.id = this.id;
-        ball.className = "ball";
-        ball.style.background = this.color;
-        ball.style.left = `${this.x}px`;
-        ball.style.top = `${this.y}px`;
-        document.getElementById("poolTable").appendChild(ball);
+    draw(ctx) {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.closePath();
     }
 
-    move() {
-        this.x += this.velocityX;
-        this.y += this.velocityY;
-        this.velocityX *= 0.98;
-        this.velocityY *= 0.98;
-        if (Math.abs(this.velocityX) < 0.1) this.velocityX = 0;
-        if (Math.abs(this.velocityY) < 0.1) this.velocityY = 0;
-        if (this.x <= 0 || this.x >= 780) this.velocityX *= -1;
-        if (this.y <= 0 || this.y >= 380) this.velocityY *= -1;
-        document.getElementById(this.id).style.left = `${this.x}px`;
-        document.getElementById(this.id).style.top = `${this.y}px`;
+    update() {
+        this.x += this.velocity.x;
+        this.y += this.velocity.y;
+        this.applyFriction();
+    }
+
+    applyFriction() {
+        this.velocity.x *= 0.98;
+        this.velocity.y *= 0.98;
+    }
+
+    checkWallCollision(canvasWidth, canvasHeight) {
+        if (this.x - this.radius < 0 || this.x + this.radius > canvasWidth) {
+            this.velocity.x *= -1;
+            this.x = Math.max(this.radius, Math.min(this.x, canvasWidth - this.radius));
+        }
+        if (this.y - this.radius < 0 || this.y + this.radius > canvasHeight) {
+            this.velocity.y *= -1;
+            this.y = Math.max(this.radius, Math.min(this.y, canvasHeight - this.radius));
+        }
+    }
+
+    checkCollision(other) {
+        let dx = other.x - this.x;
+        let dy = other.y - this.y;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < this.radius + other.radius) {
+            let angle = Math.atan2(dy, dx);
+            let speed1 = Math.sqrt(this.velocity.x ** 2 + this.velocity.y ** 2);
+            let speed2 = Math.sqrt(other.velocity.x ** 2 + other.velocity.y ** 2);
+            let direction1 = Math.atan2(this.velocity.y, this.velocity.x);
+            let direction2 = Math.atan2(other.velocity.y, other.velocity.x);
+
+            let newVelX1 = speed2 * Math.cos(direction2 - angle);
+            let newVelY1 = speed2 * Math.sin(direction2 - angle);
+            let newVelX2 = speed1 * Math.cos(direction1 - angle);
+            let newVelY2 = speed1 * Math.sin(direction1 - angle);
+
+            this.velocity.x = newVelX1 * Math.cos(angle) + newVelY1 * Math.cos(angle + Math.PI / 2);
+            this.velocity.y = newVelX1 * Math.sin(angle) + newVelY1 * Math.sin(angle + Math.PI / 2);
+            other.velocity.x = newVelX2 * Math.cos(angle) + newVelY2 * Math.cos(angle + Math.PI / 2);
+            other.velocity.y = newVelX2 * Math.sin(angle) + newVelY2 * Math.sin(angle + Math.PI / 2);
+        }
+    }
+
+    checkPocket(pockets) {
+        const pocketRadius = 10;
+        for (let pocket of pockets) {
+            let dx = this.x - pocket.x;
+            let dy = this.y - pocket.y;
+            let distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance < this.radius + pocketRadius) {  // Check if ball is inside the pocket
+                return true;
+            }
+        }
+        return false;
     }
 }
 
-let balls = [
-    new Ball("cue-ball", "white", 390, 190),
-    new Ball("target-ball", "red", 300, 200)
-];
-
-let shooting = false;
-
-document.addEventListener("mousedown", () => { shooting = true; });
-document.addEventListener("mouseup", () => {
-    if (shooting) {
-        balls[0].velocityX = (Math.random() * 4) - 2;
-        balls[0].velocityY = (Math.random() * 4) - 2;
-        shooting = false;
-        animateBalls();
+class PoolTable {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext("2d");
+        this.balls = [];
+        this.pockets = [
+            { x: 0, y: 0 }, // top-left
+            { x: 800, y: 0 }, // top-right
+            { x: 0, y: 400 }, // bottom-left
+            { x: 800, y: 400 }, // bottom-right
+            { x: 400, y: 0 }, // top-center
+            { x: 400, y: 400 }, // bottom-center
+        ];
+        this.score = 0;
+        this.mouse = { x: 0, y: 0, down: false };
+        this.setup();
+        this.addMouseControls();
     }
-});
 
-function animateBalls() {
-    balls.forEach(ball => ball.move());
-    if (balls.some(ball => ball.velocityX !== 0 || ball.velocityY !== 0)) {
-        requestAnimationFrame(animateBalls);
+    setup() {
+        this.balls.push(new Ball(200, 200, 10, "white", 1, true)); // Cue ball
+        this.balls.push(new Ball(300, 200, 10, "red", 1)); // Another ball
+    }
+
+    addMouseControls() {
+        this.canvas.addEventListener("mousedown", (e) => {
+            this.mouse.down = true;
+            this.mouse.x = e.offsetX;
+            this.mouse.y = e.offsetY;
+        });
+
+        this.canvas.addEventListener("mouseup", (e) => {
+            if (this.mouse.down) {
+                let cueBall = this.balls.find(ball => ball.isCue);
+                let dx = this.mouse.x - e.offsetX;
+                let dy = this.mouse.y - e.offsetY;
+                cueBall.velocity.x = dx * -0.1;
+                cueBall.velocity.y = dy * -0.1;
+            }
+            this.mouse.down = false;
+        });
+    }
+
+    draw() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        // Draw pockets
+        this.ctx.fillStyle = "black";
+        for (let pocket of this.pockets) {
+            this.ctx.beginPath();
+            this.ctx.arc(pocket.x, pocket.y, 10, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        // Draw balls
+        this.balls.forEach(ball => ball.draw(this.ctx));
+    }
+
+    update() {
+        for (let i = 0; i < this.balls.length; i++) {
+            let ball = this.balls[i];
+            ball.update();
+            ball.checkWallCollision(this.canvas.width, this.canvas.height);
+            for (let j = i + 1; j < this.balls.length; j++) {
+                ball.checkCollision(this.balls[j]);
+            }
+            // Check if ball falls into a pocket
+            if (ball.checkPocket(this.pockets)) {
+                this.balls.splice(i, 1); // Remove the ball
+                this.score++;
+                document.getElementById("score").innerText = `Score: ${this.score}`;
+                i--; // Adjust index after removal
+            }
+        }
+        this.draw();
     }
 }
 
-function resetGame() {
-    balls.forEach(ball => {
-        ball.x = ball.id === "cue-ball" ? 390 : 300;
-        ball.y = ball.id === "cue-ball" ? 190 : 200;
-        ball.velocityX = 0;
-        ball.velocityY = 0;
-        document.getElementById(ball.id).style.left = `${ball.x}px`;
-        document.getElementById(ball.id).style.top = `${ball.y}px`;
-    });
+const canvas = document.getElementById("poolCanvas");
+const table = new PoolTable(canvas);
+
+function animate() {
+    requestAnimationFrame(animate);
+    table.update();
 }
+
+animate();
