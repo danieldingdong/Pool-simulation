@@ -43,22 +43,53 @@ class Ball {
         let dx = other.x - this.x;
         let dy = other.y - this.y;
         let distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance < this.radius + other.radius) {
+        const minDist = this.radius + other.radius;
+    
+        if (distance < minDist) {
+            // 1. Separér kuglerne så de ikke overlapper
+            let overlap = 0.5 * (minDist - distance + 0.1); // Lidt ekstra for at sikre separation
+            let nx = dx / distance;
+            let ny = dy / distance;
+    
+            this.x -= nx * overlap;
+            this.y -= ny * overlap;
+            other.x += nx * overlap;
+            other.y += ny * overlap;
+    
+            // 2. Beregn de oprindelige hastigheder og retninger
             let angle = Math.atan2(dy, dx);
             let speed1 = Math.sqrt(this.velocity.x ** 2 + this.velocity.y ** 2);
             let speed2 = Math.sqrt(other.velocity.x ** 2 + other.velocity.y ** 2);
             let direction1 = Math.atan2(this.velocity.y, this.velocity.x);
             let direction2 = Math.atan2(other.velocity.y, other.velocity.x);
-
-            let newVelX1 = speed2 * Math.cos(direction2 - angle);
-            let newVelY1 = speed2 * Math.sin(direction2 - angle);
-            let newVelX2 = speed1 * Math.cos(direction1 - angle);
-            let newVelY2 = speed1 * Math.sin(direction1 - angle);
-
-            this.velocity.x = newVelX1 * Math.cos(angle) + newVelY1 * Math.cos(angle + Math.PI / 2);
-            this.velocity.y = newVelX1 * Math.sin(angle) + newVelY1 * Math.sin(angle + Math.PI / 2);
-            other.velocity.x = newVelX2 * Math.cos(angle) + newVelY2 * Math.cos(angle + Math.PI / 2);
-            other.velocity.y = newVelX2 * Math.sin(angle) + newVelY2 * Math.sin(angle + Math.PI / 2);
+    
+            // 3. Roter hastigheder til kollisionsakse
+            let velocity1 = {
+                x: speed1 * Math.cos(direction1 - angle),
+                y: speed1 * Math.sin(direction1 - angle)
+            };
+            let velocity2 = {
+                x: speed2 * Math.cos(direction2 - angle),
+                y: speed2 * Math.sin(direction2 - angle)
+            };
+    
+            // 4. Brug elastisk kollision i 1D (langs kollisionslinjen)
+            let massSum = this.mass + other.mass;
+            let newVelX1 = ((this.mass - other.mass) * velocity1.x + 2 * other.mass * velocity2.x) / massSum;
+            let newVelX2 = ((other.mass - this.mass) * velocity2.x + 2 * this.mass * velocity1.x) / massSum;
+    
+            // 5. Tilføj lidt energitab som friktion (mellem 0.9 og 1)
+            const damping = 0.95;
+            newVelX1 *= damping;
+            newVelX2 *= damping;
+            velocity1.y *= damping;
+            velocity2.y *= damping;
+    
+            // 6. Roter tilbage til det oprindelige koordinatsystem
+            this.velocity.x = newVelX1 * Math.cos(angle) + velocity1.y * Math.cos(angle + Math.PI / 2);
+            this.velocity.y = newVelX1 * Math.sin(angle) + velocity1.y * Math.sin(angle + Math.PI / 2);
+            other.velocity.x = newVelX2 * Math.cos(angle) + velocity2.y * Math.cos(angle + Math.PI / 2);
+            other.velocity.y = newVelX2 * Math.sin(angle) + velocity2.y * Math.sin(angle + Math.PI / 2);
         }
     }
 
@@ -96,8 +127,39 @@ class PoolTable {
     }
 
     setup() {
-        this.balls.push(new Ball(200, 200, 10, "white", 1, true)); // Cue ball
-        this.balls.push(new Ball(300, 200, 10, "red", 1)); // Another ball
+        const ballRadius = 10;
+        const startX = 500;
+        const startY = 200;
+        const rowGap = ballRadius * Math.sqrt(3);
+    
+        // Farver uden sort kugle (14 stk)
+        let colors = [
+            "red", "blue", "blue", "yellow", "yellow",
+            "red", "darkgreen", "darkgreen", "orange", "orange",
+            "purple", "purple", "blue", "orange"
+        ];
+    
+        // Bland farverne tilfældigt
+        colors = colors.sort(() => Math.random() - 0.5);
+    
+        let colorIndex = 0;
+        for (let row = 0; row < 5; row++) {
+            for (let i = 0; i <= row; i++) {
+                const x = startX + row * (ballRadius * 2);
+                const y = startY - (row * rowGap / 2) + i * rowGap;
+    
+                // Læg sort kugle i midten (række 3, position 1)
+                if (row === 2 && i === 1) {
+                    this.balls.push(new Ball(x, y, ballRadius, "black", 1));
+                } else {
+                    this.balls.push(new Ball(x, y, ballRadius, colors[colorIndex], 1));
+                    colorIndex++;
+                }
+            }
+        }
+    
+        // Tilføj cue ball
+        this.balls.push(new Ball(150, 200, ballRadius, "white", 1, true));
     }
 
     addMouseControls() {
