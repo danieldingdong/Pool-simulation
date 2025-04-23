@@ -223,3 +223,10 @@ function animate() {
 }
 
 animate();
+
+document.getElementById("resetButton").addEventListener("click", () => {
+    table.balls = [];         // Fjern alle kugler
+    table.score = 0;          // Nulstil score
+    document.getElementById("score").innerText = "Score: 0";
+    table.setup();            // Genopbyg bordet
+});
